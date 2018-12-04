@@ -6,7 +6,7 @@ pipeline {
                 sh "cd ~/"
                 sh "ContainerId=`docker container ls -q`"
                 sh "docker container stop $ContainerId"
-                sh "docker rm /$(docker ps -aq)"
+                sh "docker rm \$(docker ps -aq)"
                 sh "cd /var/lib/jenkins/workspace/PipelineDemo3/"
             }
         }
