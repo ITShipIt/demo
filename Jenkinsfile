@@ -4,8 +4,7 @@ pipeline {
         stage('---clean---') {
             steps {
                 sh "cd ~/"
-                sh "ContainerId=`docker container ls -q`"
-                sh "docker container stop "$ContainerId""
+                sh "docker container stop $(docker container ls -q)"
                 sh "docker rm \$(docker ps -aq)"
                 sh "cd /var/lib/jenkins/workspace/PipelineDemo3/"
             }
