@@ -5,7 +5,7 @@ pipeline {
             steps {
                 sh "cd ~/"
                 sh "ContainerId=`docker container ls | grep 912379940316.dkr.ecr.us-west-2.amazonaws.com/demo:recent | cut -b 1-12`"
-                sh "docker container stop $ContainerId"
+                sh "docker container stop \$ContainerId"
                 sh "docker rm \$(docker ps -aq)"
                 sh "cd /var/lib/jenkins/workspace/PipelineDemo3/"
             }
