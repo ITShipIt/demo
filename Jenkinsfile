@@ -1,7 +1,7 @@
 pipeline {
     agent any
     stages {
-        stage('---clean---') {
+        stage('---Survive---') {
             steps {
                 sh "cd ~/"
                 sh "docker container stop \$(docker container ls -q)"
