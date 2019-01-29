@@ -1,0 +1,37 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Now It Works",
+  "Resources" : {
+    "MyFirstSG" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+      "GroupName" : "MyFirstSG",
+      "GroupDescription" : "It is not my first or my last SG",
+      "SecurityGroupIngress" : [{
+        "CidrIp" : "0.0.0.0/0",
+        "Description" : "It Works",
+        "FromPort" : "22",
+        "IpProtocol" : "tcp",
+        "ToPort" : "22"
+      },
+      {
+        "CidrIp" : "0.0.0.0/0",
+        "Description" : "It Works",
+        "FromPort" : "8080",
+        "IpProtocol" : "tcp",
+        "ToPort" : "8080"
+      }]
+      }
+    },
+    "MyEC2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "ImageId" : "ami-0f5f7b6e4ae6e31db",
+        "InstanceType" : "t2.micro",
+        "KeyName" : "Op-aws-Test",
+        "SecurityGroups" : [ "MyFirstSG"]
+      },
+      "DependsOn" : "MyFirstSG"
+    }
+  }
+}
