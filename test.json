@@ -20,13 +20,20 @@
         "FromPort" : "8080",
         "IpProtocol" : "tcp",
         "ToPort" : "8080"
+      },
+      {
+        "CidrIp" : "0.0.0.0/0",
+        "Description" : "It Works",
+        "FromPort" : "4000",
+        "IpProtocol" : "tcp",
+        "ToPort" : "4000"
       }]
       }
     },
     "MyEC2Instance" : {
       "Type" : "AWS::EC2::Instance",
       "Properties" : {
-        "ImageId" : "ami-0f5f7b6e4ae6e31db",
+        "ImageId" : "ami-05e5625791683494f",
         "InstanceType" : "t2.micro",
         "KeyName" : "Op-aws-Test",
         "SecurityGroups" : [ "MyFirstSG"]

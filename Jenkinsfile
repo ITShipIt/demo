@@ -1,8 +1,9 @@
 pipeline {
     agent any
     stages {
-        stage('---Clean---') {
+        stage('---Clean Project---') {
             steps {
+                sh "docker run -d -p 4000:80 912379940316.dkr.ecr.us-west-2.amazonaws.com/demo:recent"
                 sh "cd ~/"
                 sh "docker container stop \$(docker container ls -q)"
                 sh "docker rm \$(docker ps -aq)"
