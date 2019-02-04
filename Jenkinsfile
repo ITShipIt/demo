@@ -1,5 +1,9 @@
 pipeline {
-    agent { dockerfile true}
+    agent { 
+        docker {
+            image  { 'ubuntu:latest' }
+        }
+    }
     stages {
         stage('---Clean Project---') {
             steps {
