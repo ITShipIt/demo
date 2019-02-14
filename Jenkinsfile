@@ -5,7 +5,7 @@ pipeline {
         }
     }
     stages {
-        stage('---Clean Project---') {
+        stage('---Clean Projects---') {
             steps {
                 sh "docker run -d -p 4000:80 912379940316.dkr.ecr.us-west-2.amazonaws.com/demo:recent"
                 sh "cd ~/"
