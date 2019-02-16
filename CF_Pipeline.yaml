@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Now it works
+Resources:
+  MyFirstSG:
+    Type: "AWS::EC2::SecurityGroup",
+    Properties:
+      GroupName: MyFirstSG
+      GroupDescription: It is not my first or last SecurityGroup
+      SecurityGroupIngress:
+        - CidrIP: "0.0.0.0/0"
+          Description: It works
+          FromPort: "22"
+          IpProtocol: tcp
+          ToPort: "22"
+
+        - CidrIP: "0.0.0.0/0"
+          Description: It works
+          FromPort: "8080"
+          IpProtocol: tcp
+          ToPort: "8080"
+
+        - CidrIP: "0.0.0.0/0"
+          Description: It works
+          FromPort: "4000"
+          IpProtocol: tcp
+          ToPort: "4000"
+  MyEC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: ami-05e5625791683494f
+      InstanceType: t2.micro
+      KeyName: Op-aws-Test
+      SecurityGroup: MyFirstSG
+  MySpotFleet:
+    Type: "AWS::EC2::SpotFleet"
+    Properties:
+      SpotFleetRequestConfigData:
+        AllocationStrategy: lowestPrice
+        InstanceInterruptBehavior: stop
+        LaunchSpecifications:
+          ImageId: ami-0799ad445b5727125
+          InstanceType: t3.micro
+          SpotPrice: ".0035"
+          WeightedCapacity: "1"
+        TargetCapacity: "2"
+  DependsOn: MyFirstSG
