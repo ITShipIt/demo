@@ -27,7 +27,7 @@ Resources:
   MyEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: ami-05e5625791683494f
+      ImageId: ami-06d09f028154f2ffa
       InstanceType: t2.micro
       KeyName: Op-aws-Test
       SecurityGroup: MyFirstSG
