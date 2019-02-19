@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Now it works
+Description: Cameron's Testing Stack - SpotFleet
 Resources:
   MyFirstSG:
     Type: "AWS::EC2::SecurityGroup",
