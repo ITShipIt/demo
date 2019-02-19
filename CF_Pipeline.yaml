@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Cameron's Testing Stack - SpotFleet
 Resources:
   MyFirstSG:
-    Type: "AWS::EC2::SecurityGroup",
+    Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: MyFirstSG
       GroupDescription: It is not my first or last SecurityGroup
@@ -25,7 +25,7 @@ Resources:
           IpProtocol: tcp
           ToPort: "4000"
   MyEC2Instance:
-    Type: "AWS::EC2::Instance"
+    Type: AWS::EC2::Instance
     Properties:
       ImageId: ami-05e5625791683494f
       InstanceType: t2.micro
