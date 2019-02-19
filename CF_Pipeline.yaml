@@ -31,8 +31,9 @@ Resources:
       InstanceType: t2.micro
       KeyName: Op-aws-Test
       SecurityGroup: MyFirstSG
+    DependsOn: MyFirstSG
   MySpotFleet:
-    Type: "AWS::EC2::SpotFleet"
+    Type: AWS::EC2::SpotFleet
     Properties:
       SpotFleetRequestConfigData:
         AllocationStrategy: lowestPrice
@@ -43,4 +44,4 @@ Resources:
           SpotPrice: ".0035"
           WeightedCapacity: "1"
         TargetCapacity: "2"
-  DependsOn: MyFirstSG
+    DependsOn: MyFirstSG
