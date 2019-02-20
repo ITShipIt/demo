@@ -26,8 +26,18 @@ Resources:
           ToPort: "4000"
   MyEC2Instance:
     Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFOrmation::Init:
+        config:
+          commands:
+            test:
+              command: "wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -"
+              command: "sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'"
+              command: "sudo apt-get update"\
+              command: "sudo apt-get install jenkins"
+              ignoreErrors: "false"
     Properties:
-      ImageId: ami-06d09f028154f2ffa
+      ImageId: ami-0799ad445b5727125
       InstanceType: t2.micro
       KeyName: Op-aws-Test
       SecurityGroup: MyFirstSG
@@ -39,7 +49,7 @@ Resources:
         AllocationStrategy: lowestPrice
         InstanceInterruptBehavior: stop
         LaunchSpecifications:
-          ImageId: ami-0799ad445b5727125
+          ImageId: ami-0799ad445b5727125 
           InstanceType: t2.micro
           SpotPrice: ".0035"
           WeightedCapacity: "1"
