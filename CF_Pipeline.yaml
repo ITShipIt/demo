@@ -33,7 +33,7 @@ Resources:
             test:
               command: "wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -"
               command: "sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'"
-              command: "sudo apt-get update"\
+              command: "sudo apt-get update"
               command: "sudo apt-get install jenkins"
               ignoreErrors: "false"
     Properties:
