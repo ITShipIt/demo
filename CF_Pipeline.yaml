@@ -7,19 +7,17 @@ Resources:
       GroupName: MyFirstSG
       GroupDescription: It is not my first or last SecurityGroup
       SecurityGroupIngress:
-        - CidrIP: "0.0.0.0/0"
+        - CidrIp: "0.0.0.0/0"
           Description: It works
           FromPort: "22"
           IpProtocol: tcp
           ToPort: "22"
-
-        - CidrIP: "0.0.0.0/0"
+        - CidrIp: "0.0.0.0/0"
           Description: It works
           FromPort: "8080"
           IpProtocol: tcp
           ToPort: "8080"
-
-        - CidrIP: "0.0.0.0/0"
+        - CidrIp: "0.0.0.0/0"
           Description: It works
           FromPort: "4000"
           IpProtocol: tcp
@@ -39,19 +37,20 @@ Resources:
     Properties:
       ImageId: ami-0799ad445b5727125
       InstanceType: t2.micro
-      KeyName: Op-aws-Test
-      SecurityGroup: MyFirstSG
+      KeyName: MyKeyPair
+      SecurityGroups: 
+          - MyFirstSG
     DependsOn: MyFirstSG
   MySpotFleet:
     Type: AWS::EC2::SpotFleet
     Properties:
       SpotFleetRequestConfigData:
         AllocationStrategy: lowestPrice
-        InstanceInterruptBehavior: stop
+        InstanceInterruptionBehavior: stop
         LaunchSpecifications:
-          ImageId: ami-0799ad445b5727125 
-          InstanceType: t2.micro
-          SpotPrice: ".0035"
-          WeightedCapacity: "1"
+          - ImageId: ami-0799ad445b5727125 
+            InstanceType: t2.micro
+            SpotPrice: ".0035"
+            WeightedCapacity: "1"
         TargetCapacity: "2"
     DependsOn: MyFirstSG
