@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Cameron's Testing Stack - SpotFleet
 Parameters:
-  SecurityKeyPair:
+  securityKeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Encryption keypair to use with created EC2 instances
-  SpotInstanceType:
+  spotInstanceType:
     Type: String
     AllowedValues:
     - t2.micro
@@ -22,8 +22,11 @@ Parameters:
     - t3.2xlarge
     Default: t3.micro
     Description: EC2 instance type to use for the spot fleet
+  spotBidPrice:
+    Type: Number
+    Description: The maximum price to bid on spot instances for the spot fleet request
 Resources:
-  SpotFleetManager:
+  spotFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -36,12 +39,12 @@ Resources:
             Action: 
               - sts:AssumeRole
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole #This will set all the needed permission specific for the spot fleet role
       Path: /
-  MyFirstSG:
+  capstoneSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: It is not my first or last SecurityGroup
+      GroupDescription: Basic SecurityGroup for the capstone project
       SecurityGroupIngress:
         - CidrIp: 0.0.0.0/0 #Allow SSH
           Description: It works
@@ -58,14 +61,14 @@ Resources:
           FromPort: 4000
           IpProtocol: tcp
           ToPort: 4000
-  MyEC2Instance:
+  capstoneJenkinsMaster:
     DependsOn: 
-      - MyFirstSG
+      - capstoneSG
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
         config:
-          commands:
+          commands: #hopefully this will install jenkins for us on the created instance.
             test:
               command: wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
               command: sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
@@ -76,32 +79,35 @@ Resources:
       ImageId: ami-0799ad445b5727125
       InstanceType: t2.micro
       KeyName:
-        Ref: SecurityKeyPair
+        Ref: securityKeyPair
       SecurityGroups:
-        - MyFirstSG
-  MySpotFleet:
+        - Ref: capstoneSG
+  capstoneSpotFleet:
     DependsOn:
-      - SpotFleetManager
-      - MyFirstSG
+      - spotFleetManager
+      - capstoneSG
     Type: AWS::EC2::SpotFleet
     Properties:
       SpotFleetRequestConfigData:
         IamFleetRole:
-          Ref: SpotFleetManager
+          Fn::GetAtt:
+            - spotFleetManager
+            - Arn
         AllocationStrategy: lowestPrice
         InstanceInterruptionBehavior: stop
         LaunchSpecifications:
           - ImageId: ami-0799ad445b5727125 
             InstanceType: 
-              Ref: SpotInstanceType
+              Ref: spotInstanceType
             KeyName:
-              Ref: SecurityKeyPair
+              Ref: securityKeyPair
             Monitoring:
               Enabled: True
             SecurityGroups:
               - GroupId:
-                  Ref: MyFirstSG
-            SpotPrice: .0035
+                  Ref: capstoneSG
+            SpotPrice: 
+              Ref: spotBidPrice
             WeightedCapacity: 1
         TargetCapacity: 2
     
