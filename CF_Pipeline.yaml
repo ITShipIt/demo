@@ -1,56 +1,107 @@
-AWSTemplateFormatVersion: "2010-09-09"
+AWSTemplateFormatVersion: 2010-09-09
 Description: Cameron's Testing Stack - SpotFleet
+Parameters:
+  SecurityKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Encryption keypair to use with created EC2 instances
+  SpotInstanceType:
+    Type: String
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    - t3.nano
+    - t3.micro
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+    - t3.2xlarge
+    Default: t3.micro
+    Description: EC2 instance type to use for the spot fleet
 Resources:
+  SpotFleetManager:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - spotfleet.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole
+      Path: /
   MyFirstSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: MyFirstSG
       GroupDescription: It is not my first or last SecurityGroup
       SecurityGroupIngress:
-        - CidrIp: "0.0.0.0/0"
+        - CidrIp: 0.0.0.0/0 #Allow SSH
           Description: It works
-          FromPort: "22"
+          FromPort: 22
           IpProtocol: tcp
-          ToPort: "22"
-        - CidrIp: "0.0.0.0/0"
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0 #Allow Jenkins on port 8080
           Description: It works
-          FromPort: "8080"
+          FromPort: 8080
           IpProtocol: tcp
-          ToPort: "8080"
-        - CidrIp: "0.0.0.0/0"
+          ToPort: 8080
+        - CidrIp: 0.0.0.0/0 #Port used for a basic Flask Page
           Description: It works
-          FromPort: "4000"
+          FromPort: 4000
           IpProtocol: tcp
-          ToPort: "4000"
+          ToPort: 4000
   MyEC2Instance:
+    DependsOn: 
+      - MyFirstSG
     Type: AWS::EC2::Instance
     Metadata:
-      AWS::CloudFOrmation::Init:
+      AWS::CloudFormation::Init:
         config:
           commands:
             test:
-              command: "wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -"
-              command: "sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'"
-              command: "sudo apt-get update"
-              command: "sudo apt-get install jenkins"
-              ignoreErrors: "false"
+              command: wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
+              command: sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+              command: sudo apt-get update
+              command: sudo apt-get install jenkins
+              ignoreErrors: false
     Properties:
       ImageId: ami-0799ad445b5727125
       InstanceType: t2.micro
-      KeyName: MyKeyPair
-      SecurityGroups: 
-          - MyFirstSG
-    DependsOn: MyFirstSG
+      KeyName:
+        Ref: SecurityKeyPair
+      SecurityGroups:
+        - MyFirstSG
   MySpotFleet:
+    DependsOn:
+      - SpotFleetManager
+      - MyFirstSG
     Type: AWS::EC2::SpotFleet
     Properties:
       SpotFleetRequestConfigData:
+        IamFleetRole:
+          Ref: SpotFleetManager
         AllocationStrategy: lowestPrice
         InstanceInterruptionBehavior: stop
         LaunchSpecifications:
           - ImageId: ami-0799ad445b5727125 
-            InstanceType: t2.micro
-            SpotPrice: ".0035"
-            WeightedCapacity: "1"
-        TargetCapacity: "2"
-    DependsOn: MyFirstSG
+            InstanceType: 
+              Ref: SpotInstanceType
+            KeyName:
+              Ref: SecurityKeyPair
+            Monitoring:
+              Enabled: True
+            SecurityGroups:
+              - GroupId:
+                  Ref: MyFirstSG
+            SpotPrice: .0035
+            WeightedCapacity: 1
+        TargetCapacity: 2
+    
