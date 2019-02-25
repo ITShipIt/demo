@@ -1,5 +1,11 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Cameron's Testing Stack - SpotFleet
+Mappings:
+  CidrMappings:
+    public-subnet:
+      CIDR: 192.168.1.0/24
+    vpc:
+      CIDR: 192.168.0.0/16
 Parameters:
   securityKeyPair:
     Type: AWS::EC2::KeyPair::KeyName
@@ -25,6 +31,10 @@ Parameters:
   spotBidPrice:
     Type: Number
     Description: The maximum price to bid on spot instances for the spot fleet request
+  spotTargetCapacity:
+    Type: Number
+    Description: The target capacity of the spot fleet request.
+    Default: 2
 Resources:
   spotFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
     Type: AWS::IAM::Role
@@ -41,10 +51,82 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole #This will set all the needed permission specific for the spot fleet role
       Path: /
+  vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+          - CidrMappings
+          - vpc
+          - CIDR
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+  internetGateway:
+    DependsOn:
+      - vpc
+    Type: AWS::EC2::InternetGateway
+  attachGateway:
+    DependsOn:
+       - vpc
+       - internetGateway
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Ref: internetGateway
+      VpcId:
+        Ref: vpc
+  publicRouteTable:
+    DependsOn:
+      - vpc
+      - attachGateway
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: vpc
+  publicRoute:
+    DependsOn:
+      - publicRouteTable
+      - internetGateway
+      - attachGateway
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: internetGateway
+      RouteTableId:
+        Ref: publicRouteTable
+  publicSubnet:
+    DependsOn:
+      - attachGateway
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+          - CidrMappings
+          - public-subnet
+          - CIDR
+      VpcId:
+        Ref: vpc
+      MapPublicIpOnLaunch: True
+  publicSubnetRouteTableAssociation:
+    DependsOn:
+      - publicRouteTable
+      - publicSubnet
+      - attachGateway
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: publicRouteTable
+      SubnetId:
+        Ref: publicSubnet
   capstoneSG:
+    DependsOn:
+      - vpc
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Basic SecurityGroup for the capstone project
+      VpcId:
+        Ref: vpc
       SecurityGroupIngress:
         - CidrIp: 0.0.0.0/0 #Allow SSH
           Description: It works
@@ -80,8 +162,10 @@ Resources:
       InstanceType: t2.micro
       KeyName:
         Ref: securityKeyPair
-      SecurityGroups:
+      SecurityGroupIds:
         - Ref: capstoneSG
+      SubnetId:
+        Ref: publicSubnet
   capstoneSpotFleet:
     DependsOn:
       - spotFleetManager
@@ -106,8 +190,11 @@ Resources:
             SecurityGroups:
               - GroupId:
                   Ref: capstoneSG
+            SubnetId:
+              Ref: publicSubnet
             SpotPrice: 
               Ref: spotBidPrice
             WeightedCapacity: 1
-        TargetCapacity: 2
+        TargetCapacity:
+          Ref: spotTargetCapacity
     
