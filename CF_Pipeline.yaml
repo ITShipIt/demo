@@ -149,14 +149,33 @@ Resources:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
-        config:
+        configsets:
+          jenkinsinstall:
+            - update
+            - grabRepo
+            - grab
+            - installJenkins
+            - startJenkins
+        update:
           commands: #hopefully this will install jenkins for us on the created instance.
             test:
-              command: wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
-              command: sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
-              command: sudo apt-get update
-              command: sudo apt-get install jenkins
-              ignoreErrors: false
+              command: yum update -y
+        grabRepo:
+          commands:
+            test:
+              command: wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins.io/redhat/jenkins.repo
+        grabKey:
+          commands:
+            test:
+              command: wget rpm --import https://pkg.jenkins.io/jenkins.io.key
+        installJenkins:
+          commands:
+            test:
+              command: yum install jenkins -y
+        startJenkins:
+          commands:
+            test:
+              command:  service jenkins start
     Properties:
       ImageId: ami-0799ad445b5727125
       InstanceType: t2.micro
@@ -166,6 +185,12 @@ Resources:
         - Ref: capstoneSG
       SubnetId:
         Ref: publicSubnet
+      UserData:
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash -xe
+            #Install the files and packages from the Metadata
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Reigon} --configsets jenkinsinstall
   capstoneSpotFleet:
     DependsOn:
       - spotFleetManager
