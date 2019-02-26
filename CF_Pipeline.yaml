@@ -185,7 +185,7 @@ Resources:
             command2.5:
               command:  service jenkins start
     Properties:
-      ImageId: ami-0799ad445b5727125
+      ImageId: ami-0799ad445b5727125 #Amazon Linux 2 AMI
       InstanceType: t2.micro
       KeyName:
         Ref: securityKeyPair
