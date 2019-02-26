@@ -149,32 +149,20 @@ Resources:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
-        configsets:
-          jenkinsinstall:
-            - update
-            - grabRepo
-            - grab
-            - installJenkins
-            - startJenkins
-        update:
+        config:
+          packages:
+            yum:
+              java-1.8.0-openjdk: []
           commands: #hopefully this will install jenkins for us on the created instance.
-            test:
+            command1:
               command: yum update -y
-        grabRepo:
-          commands:
-            test:
-              command: wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins.io/redhat/jenkins.repo
-        grabKey:
-          commands:
-            test:
-              command: wget rpm --import https://pkg.jenkins.io/jenkins.io.key
-        installJenkins:
-          commands:
-            test:
+            command2:
+              command: wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+            command3:
+              command: rpm --import https://jenkins-ci.org/redhat/jenkins-ci.org.key
+            command4:
               command: yum install jenkins -y
-        startJenkins:
-          commands:
-            test:
+            command5:
               command:  service jenkins start
     Properties:
       ImageId: ami-0799ad445b5727125
@@ -190,7 +178,8 @@ Resources:
           !Sub |
             #!/bin/bash -xe
             #Install the files and packages from the Metadata
-            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Reigon} --configsets jenkinsinstall
+            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
+            #/opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
   capstoneSpotFleet:
     DependsOn:
       - spotFleetManager
