@@ -138,7 +138,7 @@ Resources:
           FromPort: 8080
           IpProtocol: tcp
           ToPort: 8080
-        - CidrIp: 0.0.0.0/0 #Port used for a basic Flask Page
+        - CidrIp: 0.0.0.0/0 #Port used for a basic Flask Page, old and will be eventually removed
           Description: It works
           FromPort: 4000
           IpProtocol: tcp
@@ -149,20 +149,40 @@ Resources:
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
-        config:
+        configSets:
+          war:
+            - jenkinsWarInstall
+          cli:
+            - jenkinsCliInstall
+        jenkinsWarInstall: #Method 2, downloading the jenkins .war and running that with java directly. No idea how this will change things, but I can disable the setup wizard this way.
           packages:
             yum:
               java-1.8.0-openjdk: []
-          commands: #hopefully this will install jenkins for us on the created instance.
-            command1:
+          commands:
+            command1.1: 
               command: yum update -y
-            command2:
+            command1.2:
+              command: mkdir /etc/jenkins
+            command1.3:
+              command: wget http://mirrors.jenkins.io/war-stable/latest/jenkins.war
+              cwd: /etc/jenkins
+            command1.4:
+              command: java -Djenkins.install.runSetupWizard=false -jar jenkins.war
+              cwd: /etc/jenkins
+        jenkinsCliInstall: #This will install jenkins through the cli using an rpm, but it enables the setup wizard.
+          packages:
+            yum:
+              java-1.8.0-openjdk: []
+          commands: 
+            command2.1:
+              command: yum update -y
+            command2.2:
               command: wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
-            command3:
+            command2.3:
               command: rpm --import https://jenkins-ci.org/redhat/jenkins-ci.org.key
-            command4:
+            command2.4:
               command: yum install jenkins -y
-            command5:
+            command2.5:
               command:  service jenkins start
     Properties:
       ImageId: ami-0799ad445b5727125
@@ -173,12 +193,12 @@ Resources:
         - Ref: capstoneSG
       SubnetId:
         Ref: publicSubnet
-      UserData:
+      UserData: #the following script calls the cfn-init helper function to run the commands the the instance metadata using a preconfigured set of commands.
         "Fn::Base64":
           !Sub |
             #!/bin/bash -xe
             #Install the files and packages from the Metadata
-            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
+            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region} --configset war
             #/opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
   capstoneSpotFleet:
     DependsOn:
