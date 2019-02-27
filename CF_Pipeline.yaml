@@ -158,21 +158,25 @@ Resources:
           packages:
             yum:
               java-1.8.0-openjdk: []
+          files:
+            /etc/jenkins/init.groovy:
+              source: https://raw.githubusercontent.com/ITShipIt/demo/DockerAgents/init.groovy
           commands:
             command1.1: 
               command: yum update -y
             command1.2:
-              command: mkdir /etc/jenkins
-            command1.3:
               command: wget http://mirrors.jenkins.io/war-stable/latest/jenkins.war
               cwd: /etc/jenkins
-            command1.4:
+            command1.3:
               command: java -Djenkins.install.runSetupWizard=false -jar jenkins.war
               cwd: /etc/jenkins
         jenkinsCliInstall: #This will install jenkins through the cli using an rpm, but it enables the setup wizard.
           packages:
             yum:
               java-1.8.0-openjdk: []
+          files:
+            /var/lib/jenkins/init.groovy:
+              source: https://raw.githubusercontent.com/ITShipIt/demo/DockerAgents/init.groovy
           commands: 
             command2.1:
               command: yum update -y
@@ -183,7 +187,11 @@ Resources:
             command2.4:
               command: yum install jenkins -y
             command2.5:
-              command:  service jenkins start
+              command: service jenkins start
+            command2.7:
+              command: sed -i 's/JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"/JENKINS_JAVA_OPTIONS="-Djenkins.install.runSetupWizard=false -Djava.awt.headless=true"/g' /etc/sysconfig/jenkins
+            command2.8: 
+              command: service jenkins restart
     Properties:
       ImageId: ami-0799ad445b5727125 #Amazon Linux 2 AMI
       InstanceType: t2.micro
@@ -198,7 +206,7 @@ Resources:
           !Sub |
             #!/bin/bash -xe
             #Install the files and packages from the Metadata
-            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region} --configset war
+            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region} --configset cli
             #/opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
   capstoneSpotFleet:
     DependsOn:
