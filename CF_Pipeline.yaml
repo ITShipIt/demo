@@ -7,6 +7,13 @@ Mappings:
     vpc:
       CIDR: 192.168.0.0/16
 Parameters:
+  JAdmin:
+    Type: String
+    Description: User name that will be used for the Jenkins Admin user.
+  JAdminPass:
+    Type: String
+    Description: Password used for the created admin password.
+    NoEcho: True
   securityKeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Encryption keypair to use with created EC2 instances
@@ -176,7 +183,33 @@ Resources:
               java-1.8.0-openjdk: []
           files:
             /var/lib/jenkins/init.groovy:
-              source: https://raw.githubusercontent.com/ITShipIt/demo/DockerAgents/init.groovy
+              content: !Sub |
+                #!groovy
+                import jenkins.model.*
+                import hudson.security.*
+                import jenkins.install.InstallState
+
+                def instance = Jenkins.getInstance()
+
+                println "--> creating security realm"
+                def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+                instance.setSecurityRealm(hudsonRealm)
+
+                println "--> creating local user '${JAdmin}'"
+                // Create user with custom pass
+                def user = instance.getSecurityRealm().createAccount('${JAdmin}', '${JAdminPass}')
+                user.save()
+
+                def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+                strategy.setAllowAnonymousRead(false)
+                instance.setAuthorizationStrategy(strategy)
+
+                if (!instance.installState.isSetupComplete()) {
+                  println '--> Neutering SetupWizard'
+                  InstallState.INITIAL_SETUP_COMPLETED.initializeState()
+                }
+
+                instance.save()
           commands: 
             command2.1:
               command: yum update -y
