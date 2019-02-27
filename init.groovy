@@ -5,6 +5,10 @@ import jenkins.install.InstallState
 
 def instance = Jenkins.getInstance()
 
+println "--> creating security realm"
+def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+instance.setSecurityRealm(hudsonRealm)
+
 println "--> creating local user 'admin'"
 // Create user with custom pass
 def user = instance.getSecurityRealm().createAccount('admin', 'someAdminPass')
