@@ -182,7 +182,7 @@ Resources:
             yum:
               java-1.8.0-openjdk: []
           files:
-            /var/lib/jenkins/init.groovy:
+            /var/lib/jenkins/init.groovy.d/adminmk.groovy:
               content: !Sub |
                 #!groovy
                 import jenkins.model.*
