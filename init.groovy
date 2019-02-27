@@ -1,19 +1,22 @@
 #!groovy
- 
 import jenkins.model.*
 import hudson.security.*
-import jenkins.security.s2m.AdminWhitelistRule
- 
+import jenkins.install.InstallState
+
 def instance = Jenkins.getInstance()
 
-instance.setInstallState(InstallState.INITIAL_SETUP_COMPLETED)
- 
-def hudsonRealm = new HudsonPrivateSecurityRealm(false)
-hudsonRealm.createAccount("admin", "admin")
-instance.setSecurityRealm(hudsonRealm)
- 
+println "--> creating local user 'admin'"
+// Create user with custom pass
+def user = instance.getSecurityRealm().createAccount('admin', 'someAdminPass')
+user.save()
+
 def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
 instance.setAuthorizationStrategy(strategy)
+
+if (!instance.installState.isSetupComplete()) {
+  println '--> Neutering SetupWizard'
+  InstallState.INITIAL_SETUP_COMPLETED.initializeState()
+}
+
 instance.save()
- 
-Jenkins.instance.getInjector().getInstance(AdminWhitelistRule.class).setMasterKillSwitch(false)
