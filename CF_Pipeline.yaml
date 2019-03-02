@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cameron's Testing Stack - SpotFleet
+Mappings:
+  CidrMappings:
+    public-subnet:
+      CIDR: 192.168.1.0/24
+    vpc:
+      CIDR: 192.168.0.0/16
+Parameters:
+  JAdmin:
+    Type: String
+    Description: User name that will be used for the Jenkins Admin user.
+  JAdminPass:
+    Type: String
+    Description: Password used for the created admin password.
+    NoEcho: True
+  securityKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Encryption keypair to use with created EC2 instances
+  spotInstanceType:
+    Type: String
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    - t3.nano
+    - t3.micro
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+    - t3.2xlarge
+    Default: t3.micro
+    Description: EC2 instance type to use for the spot fleet
+  spotBidPrice:
+    Type: Number
+    Description: The maximum price to bid on spot instances for the spot fleet request
+  spotTargetCapacity:
+    Type: Number
+    Description: The target capacity of the spot fleet request.
+    Default: 2
+Resources:
+  spotFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - spotfleet.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole #This will set all the needed permission specific for the spot fleet role
+      Path: /
+  vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+          - CidrMappings
+          - vpc
+          - CIDR
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+  internetGateway:
+    DependsOn:
+      - vpc
+    Type: AWS::EC2::InternetGateway
+  attachGateway:
+    DependsOn:
+       - vpc
+       - internetGateway
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Ref: internetGateway
+      VpcId:
+        Ref: vpc
+  publicRouteTable:
+    DependsOn:
+      - vpc
+      - attachGateway
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: vpc
+  publicRoute:
+    DependsOn:
+      - publicRouteTable
+      - internetGateway
+      - attachGateway
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: internetGateway
+      RouteTableId:
+        Ref: publicRouteTable
+  publicSubnet:
+    DependsOn:
+      - attachGateway
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+          - CidrMappings
+          - public-subnet
+          - CIDR
+      VpcId:
+        Ref: vpc
+      MapPublicIpOnLaunch: True
+  publicSubnetRouteTableAssociation:
+    DependsOn:
+      - publicRouteTable
+      - publicSubnet
+      - attachGateway
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: publicRouteTable
+      SubnetId:
+        Ref: publicSubnet
+  capstoneSG:
+    DependsOn:
+      - vpc
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Basic SecurityGroup for the capstone project
+      VpcId:
+        Ref: vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0 #Allow SSH
+          Description: It works
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0 #Allow Jenkins on port 8080
+          Description: It works
+          FromPort: 8080
+          IpProtocol: tcp
+          ToPort: 8080
+        - CidrIp: 0.0.0.0/0 #Port used for a basic Flask Page, old and will be eventually removed
+          Description: It works
+          FromPort: 4000
+          IpProtocol: tcp
+          ToPort: 4000
+  capstoneJenkinsMaster:
+    DependsOn: 
+      - capstoneSG
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          war:
+            - jenkinsWarInstall
+          cli:
+            - jenkinsCliInstall
+        jenkinsWarInstall: #Method 2, downloading the jenkins .war and running that with java directly. No idea how this will change things, but I can disable the setup wizard this way.
+          packages:
+            yum:
+              java-1.8.0-openjdk: []
+          files:
+            /etc/jenkins/init.groovy:
+              source: https://raw.githubusercontent.com/ITShipIt/demo/DockerAgents/init.groovy
+          commands:
+            command1.1: 
+              command: yum update -y
+            command1.2:
+              command: wget http://mirrors.jenkins.io/war-stable/latest/jenkins.war
+              cwd: /etc/jenkins
+            command1.3:
+              command: java -Djenkins.install.runSetupWizard=false -jar jenkins.war
+              cwd: /etc/jenkins
+        jenkinsCliInstall: #This will install jenkins through the cli using an rpm, but it enables the setup wizard.
+          packages:
+            yum:
+              java-1.8.0-openjdk: []
+          files:
+            /var/lib/jenkins/init.groovy.d/adminmk.groovy:
+              content: !Sub |
+                #!groovy
+                import jenkins.model.*
+                import hudson.security.*
+                import jenkins.install.InstallState
+
+                def instance = Jenkins.getInstance()
+
+                println "--> creating security realm"
+                def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+                instance.setSecurityRealm(hudsonRealm)
+
+                println "--> creating local user '${JAdmin}'"
+                // Create user with custom pass
+                def user = instance.getSecurityRealm().createAccount('${JAdmin}', '${JAdminPass}')
+                user.save()
+
+                def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+                strategy.setAllowAnonymousRead(false)
+                instance.setAuthorizationStrategy(strategy)
+
+                if (!instance.installState.isSetupComplete()) {
+                  println '--> Neutering SetupWizard'
+                  InstallState.INITIAL_SETUP_COMPLETED.initializeState()
+                }
+
+                instance.save()
+          commands: 
+            command2.1:
+              command: yum update -y
+            command2.2:
+              command: wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+            command2.3:
+              command: rpm --import https://jenkins-ci.org/redhat/jenkins-ci.org.key
+            command2.4:
+              command: yum install jenkins -y
+            command2.5:
+              command: service jenkins start
+            command2.7:
+              command: sed -i 's/JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"/JENKINS_JAVA_OPTIONS="-Djenkins.install.runSetupWizard=false -Djava.awt.headless=true"/g' /etc/sysconfig/jenkins
+            command2.8: 
+              command: service jenkins restart
+    Properties:
+      ImageId: ami-0799ad445b5727125 #Amazon Linux 2 AMI
+      InstanceType: t2.micro
+      KeyName:
+        Ref: securityKeyPair
+      SecurityGroupIds:
+        - Ref: capstoneSG
+      SubnetId:
+        Ref: publicSubnet
+      UserData: #the following script calls the cfn-init helper function to run the commands the the instance metadata using a preconfigured set of commands.
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash -xe
+            #Install the files and packages from the Metadata
+            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region} --configset cli
+            #/opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
+  capstoneSpotFleet:
+    DependsOn:
+      - spotFleetManager
+      - capstoneSG
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        IamFleetRole:
+          Fn::GetAtt:
+            - spotFleetManager
+            - Arn
+        AllocationStrategy: lowestPrice
+        InstanceInterruptionBehavior: stop
+        LaunchSpecifications:
+          - ImageId: ami-0799ad445b5727125 
+            InstanceType: 
+              Ref: spotInstanceType
+            KeyName:
+              Ref: securityKeyPair
+            Monitoring:
+              Enabled: True
+            SecurityGroups:
+              - GroupId:
+                  Ref: capstoneSG
+            SubnetId:
+              Ref: publicSubnet
+            SpotPrice: 
+              Ref: spotBidPrice
+            WeightedCapacity: 1
+        TargetCapacity:
+          Ref: spotTargetCapacity
+    
