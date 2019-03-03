@@ -1,0 +1,25 @@
+United Sates
+N.Virginia - ami-02da3a138888ced85
+Ohio - ami-0de7daa7385332688
+N.California - ami-09bfcadb25ee95bec
+Oregon - ami-095cd038eef3e5074
+
+Asia Pacific
+Mumbai - ami-03103e7ded4c02ef8
+Seoul - ami-045e355a6004a67c4
+Singapore - ami-00158b185c8cc09dc
+Sydney - ami-0c3228fd049cdb151
+Tokyo - ami-097473abce069b8e9
+
+Canada
+Central - ami-05f9d71283317f5c9
+
+Europe
+Frankfurt - ami-07f1fbbff759e24dd
+Ireland - ami-02a39bdb8e8ee056a
+London - ami-07a5200f3fa9c33d3
+Paris - ami-0e9073d7ac75f4491
+Stockholm - ami-244ac35a
+
+South America
+São Paulo - ami-095a33e72f6bb89c3
