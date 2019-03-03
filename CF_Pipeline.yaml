@@ -122,6 +122,10 @@ Resources:
           - CIDR
       VpcId:
         Ref: vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
       MapPublicIpOnLaunch: True
   publicSubnetRouteTableAssociation:
     DependsOn:
@@ -161,6 +165,7 @@ Resources:
   capstoneJenkinsMaster:
     DependsOn: 
       - capstoneSG
+      - publicSubnet
     Type: AWS::EC2::Instance
     Metadata:
       AWS::CloudFormation::Init:
@@ -185,7 +190,7 @@ Resources:
             command1.3:
               command: java -Djenkins.install.runSetupWizard=false -jar jenkins.war
               cwd: /etc/jenkins
-        jenkinsCliInstall: #This will install jenkins through the cli using an rpm, but it enables the setup wizard.
+        jenkinsCliInstall: #This will install jenkins through the cli using an rpm
           packages:
             yum:
               java-1.8.0-openjdk: []
