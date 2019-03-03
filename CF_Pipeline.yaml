@@ -7,6 +7,14 @@ Mappings:
     vpc:
       CIDR: 192.168.0.0/16
 Parameters:
+  masterAmi:
+    Type: String
+    Description: Ami to be used for jenkins, please use a redhat based image.
+    Default: ami-095cd038eef3e5074
+  slaveAmi:
+    Type: String
+    Description: Ami to be used for the jenkins slaves.
+    Default: ami-095cd038eef3e5074
   JAdmin:
     Type: String
     Description: User name that will be used for the Jenkins Admin user.
@@ -226,7 +234,8 @@ Resources:
             command2.8: 
               command: service jenkins restart
     Properties:
-      ImageId: ami-0799ad445b5727125 #Amazon Linux 2 AMI
+      ImageId: 
+        Ref: masterAmi
       InstanceType: t2.micro
       KeyName:
         Ref: securityKeyPair
@@ -255,7 +264,8 @@ Resources:
         AllocationStrategy: lowestPrice
         InstanceInterruptionBehavior: stop
         LaunchSpecifications:
-          - ImageId: ami-0799ad445b5727125 
+          - ImageId:
+              Ref: slaveAmi
             InstanceType: 
               Ref: spotInstanceType
             KeyName:
