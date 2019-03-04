@@ -90,7 +90,7 @@ Parameters:
 
 Resources:
 
-  spotFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
+  awsFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -98,14 +98,55 @@ Resources:
         Statement:
           - Effect: Allow
             Principal: 
-              Service: 
+              Service:
                 - spotfleet.amazonaws.com
-            Action: 
+            Action:
               - sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole #This will set all the needed permission specific for the spot fleet role
       Path: /
 
+  jenkinsFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
+    DependsOn:
+      - capstoneJenkinsMaster
+      - capstoneSpotFleet
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              AWS: "*"
+            Action: 
+              - sts:AssumeRole
+            Condition:
+              IpAddress:
+                aws:sourceip:
+                  Fn::GetAtt:
+                    - capstoneJenkinsMaster
+                    - PublicIp
+      Path: /
+      Policies:
+        - PolicyName: JenkinsSpotFleetManager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:RunInstances
+                  - ec2:StartInstances #(condition?: ec2:CreateAction = RunInstances)
+                  - ec2:StopInstances
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstance Status
+                  - ec2:DescribeImages
+                  - ec2:DescribeSubnets
+                  - ec2:RequestSpotInstances
+                  - ec2:TerminateInstances
+                  - ec2:ModifySpotFleetRequest
+                  - iam:PassRole
+                Resources: "*"
   vpc:
     Type: AWS::EC2::VPC
     Properties:
@@ -279,6 +320,49 @@ Resources:
                 else {
                     println "Shutdown mode enabled.  Configure CSRF protection SKIPPED."
                 }
+            /var/lib/jenkins/init.groovy.d/pluginInstallation.groovy:
+              content:
+                Fn::Sub:
+                  - |
+                    import jenkins.model.*
+                    import java.util.logging.Logger
+                    def logger = Logger.getLogger("")
+                    def installed = false
+                    def initialized = false
+                    def pluginParameter="${jenkins_plugins}"
+                    def plugins = pluginParameter.split()
+                    logger.info("" + plugins)
+                    def instance = Jenkins.getInstance()
+                    def pm = instance.getPluginManager()
+                    def uc = instance.getUpdateCenter()
+                    plugins.each {
+                      logger.info("Checking " + it)
+                      if (!pm.getPlugin(it)) {
+                        logger.info("Looking UpdateCenter for " + it)
+                        if (!initialized) {
+                          uc.updateAllSites()
+                          initialized = true
+                        }
+                        def plugin = uc.getPlugin(it)
+                        if (plugin) {
+                          logger.info("Installing " + it)
+                          def installFuture = plugin.deploy()
+                          while(!installFuture.isDone()) {
+                            logger.info("Waiting for plugin install: " + it)
+                            sleep(3000)
+                          }
+                          installed = true
+                        }
+                      }
+                    }
+                    if (installed) {
+                      logger.info("Plugins installed, initializing a restart!")
+                      instance.save()
+                      instance.restart()
+                    }
+                  - {
+                    jenkins_plugins: ec2-fleet
+                    }
           commands: 
             command2.1:
               command: yum update -y
@@ -484,14 +568,14 @@ Resources:
 
   capstoneSpotFleet:
     DependsOn:
-      - spotFleetManager
+      - awsFleetManager
       - capstoneSG
     Type: AWS::EC2::SpotFleet
     Properties:
       SpotFleetRequestConfigData:
         IamFleetRole:
           Fn::GetAtt:
-            - spotFleetManager
+            - awsFleetManager
             - Arn
         AllocationStrategy: lowestPrice
         InstanceInterruptionBehavior: stop
