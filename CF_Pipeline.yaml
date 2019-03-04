@@ -220,7 +220,7 @@ Resources:
         configSets:
           cli:
             - jenkinsCliInstall
-            - jenkinsSlaveFactory
+            - jenkinsPluginConfiguration
         jenkinsCliInstall: #This will install jenkins through the cli using an rpm
           packages:
             yum:
@@ -269,7 +269,7 @@ Resources:
               command: sed -i 's/JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"/JENKINS_JAVA_OPTIONS="-Djenkins.install.runSetupWizard=false -Djava.awt.headless=true"/g' /etc/sysconfig/jenkins
             command2.8: 
               command: service jenkins restart
-        jenkinsSlaveFactory:
+        jenkinsPluginConfiguration:
           files:
             /var/lib/jenkins/init.groovy.d/slaveFactory.groovy:
               content: !Sub |
