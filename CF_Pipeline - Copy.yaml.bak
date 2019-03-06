@@ -1,0 +1,655 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Cameron's Testing Stack - SpotFleet
+
+Mappings:
+
+  CidrMappings:
+
+    public-subnet:
+      CIDR: 192.168.1.0/24
+    vpc:
+      CIDR: 192.168.0.0/16
+
+  RegionMap: #list of the amazon linux 2 images for each region, imageId is selected based on where the stack is created.
+    us-east-1: # N.Virgina
+      AMI: ami-02da3a138888ced85
+    us-east-2: # Ohio
+      AMI: ami-0de7daa7385332688
+    us-west-1: # N.California
+      AMI: ami-09bfcadb25ee95bec
+    us-west-2: #Oregon
+      AMI: ami-095cd038eef3e5074
+    ap-south-1: # Mumbai
+      AMI: ami-03103e7ded4c02ef8
+    ap-northeast-1: #Tokyo
+      AMI: ami-097473abce069b8e9
+    ap-northeast-2: #Seoul
+      AMI: ami-045e355a6004a67c4
+    ap-southeast-1: #Singapore
+      AMI: ami-00158b185c8cc09dc
+    ap-southeast-2: #Sydney
+      AMI: ami-0c3228fd049cdb151
+    eu-central-1: #Frankfurt
+      AMI: ami-07f1fbbff759e24dd
+    eu-west-1: #Ireland
+      AMI: ami-02a39bdb8e8ee056a
+    eu-west-2: #London
+      AMI: ami-07a5200f3fa9c33d3
+    eu-west-3: #Paris
+      AMI: Paris - ami-0e9073d7ac75f4491
+    eu-north-1: #Stockholm
+      AMI: ami-244ac35a
+    sa-east-1: # São Paulo
+      AMI: ami-095a33e72f6bb89c3
+
+Parameters:
+
+  JAdmin:
+    Type: String
+    Description: User name that will be used for the Jenkins Admin user.
+    Default: admin
+
+  JAdminPass:
+    Type: String
+    Description: Password used for the created admin password.
+    Default: password
+    #NoEcho: True
+
+  SlackTeamDomain:
+    Type: String
+    Description: Domain name from slack application
+    Default: janus-network
+  
+  SlackGlobalChannel:
+    Type: String
+    Description: Default channel to send slack messages to
+    Default: "#jenkins-noisy"
+
+  SlackGlobalToken:
+    Type: String
+    Description: Integration token from slack application
+    #NoEcho: True
+    Default: RF8wugCRKD4h76T5UZqx9il0
+
+  securityKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Encryption keypair to use with created EC2 instances
+
+  spotInstanceType:
+    Type: String
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+    - t2.2xlarge
+    - t3.nano
+    - t3.micro
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+    - t3.2xlarge
+    Default: t3.micro
+    Description: EC2 instance type to use for the spot fleet
+
+  spotBidPrice:
+    Type: Number
+    Description: The maximum price to bid on spot instances for the spot fleet request
+    Default: 0.001
+
+  spotTargetCapacity:
+    Type: Number
+    Description: The target capacity of the spot fleet request.
+    Default: 2
+
+Resources:
+
+  awsFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              Service:
+                - spotfleet.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole #This will set all the needed permission specific for the spot fleet role
+      Path: /
+
+  jenkinsFleetManager: #This is the IAM role that aws will use to manage and request spot instances for the project.
+    DependsOn:
+      - capstoneJenkinsMaster
+      - capstoneSpotFleet
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: 
+              AWS: "*"
+            Action: 
+              - sts:AssumeRole
+            Condition:
+              IpAddress:
+                aws:SourceIp:
+                  Fn::GetAtt:
+                    - capstoneJenkinsMaster
+                    - PublicIp
+      Path: /
+      Policies:
+        - PolicyName: JenkinsSpotFleetManager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:CreateTags
+                  - ec2:RunInstances
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:DescribeSpotFleetRequests
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeImages
+                  - ec2:DescribeSubnets
+                  - ec2:RequestSpotInstances
+                  - ec2:TerminateInstances
+                  - ec2:ModifySpotFleetRequest
+                  - iam:PassRole
+                Resource: '*'
+  vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+          - CidrMappings
+          - vpc
+          - CIDR
+      EnableDnsHostnames: True
+      EnableDnsSupport: True
+
+  internetGateway:
+    DependsOn:
+      - vpc
+    Type: AWS::EC2::InternetGateway
+
+  attachGateway:
+    DependsOn:
+       - vpc
+       - internetGateway
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Ref: internetGateway
+      VpcId:
+        Ref: vpc
+
+  publicRouteTable:
+    DependsOn:
+      - vpc
+      - attachGateway
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: vpc
+
+  publicRoute:
+    DependsOn:
+      - publicRouteTable
+      - internetGateway
+      - attachGateway
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: internetGateway
+      RouteTableId:
+        Ref: publicRouteTable
+
+  publicSubnet:
+    DependsOn:
+      - attachGateway
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock:
+        Fn::FindInMap:
+          - CidrMappings
+          - public-subnet
+          - CIDR
+      VpcId:
+        Ref: vpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      MapPublicIpOnLaunch: True
+
+  publicSubnetRouteTableAssociation:
+    DependsOn:
+      - publicRouteTable
+      - publicSubnet
+      - attachGateway
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Ref: publicRouteTable
+      SubnetId:
+        Ref: publicSubnet
+
+  capstoneSG:
+    DependsOn:
+      - vpc
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Basic SecurityGroup for the capstone project
+      VpcId:
+        Ref: vpc
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0 #Allow SSH
+          Description: It works
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0 #Allow Jenkins on port 8080
+          Description: It works
+          FromPort: 8080
+          IpProtocol: tcp
+          ToPort: 8080
+        - CidrIp: 0.0.0.0/0 #Port used for a basic Flask Page, old and will be eventually removed
+          Description: It works
+          FromPort: 4000
+          IpProtocol: tcp
+          ToPort: 4000
+
+  capstoneJenkinsMaster:
+    DependsOn: 
+      - capstoneSG
+      - publicSubnet
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          cli:
+            - jenkinsCliInstall
+            - jenkinsPluginConfiguration
+        jenkinsCliInstall: #This will install jenkins through the cli using an rpm
+          packages:
+            yum:
+              java-1.8.0-openjdk: []
+          files:
+            /var/lib/jenkins/init.groovy.d/adminmk.groovy:
+              content: !Sub |
+                #!groovy
+                import jenkins.model.*
+                import hudson.security.*
+                import jenkins.install.InstallState
+
+                def instance = Jenkins.getInstance()
+
+                println "--> creating security realm"
+                def hudsonRealm = new HudsonPrivateSecurityRealm(false)
+                instance.setSecurityRealm(hudsonRealm)
+
+                println "--> creating local user '${JAdmin}'"
+                // Create user with custom pass
+                def user = instance.getSecurityRealm().createAccount('${JAdmin}', '${JAdminPass}')
+                user.save()
+
+                def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+                strategy.setAllowAnonymousRead(false)
+                instance.setAuthorizationStrategy(strategy)
+
+                if (!instance.installState.isSetupComplete()) {
+                  println '--> Neutering SetupWizard'
+                  InstallState.INITIAL_SETUP_COMPLETED.initializeState()
+                }
+
+                instance.save()
+            /var/lib/jenkins/init.groovy.d/secureJenkins.groovy:
+              content: !Sub |
+                import jenkins.security.s2m.AdminWhitelistRule
+                import hudson.security.csrf.DefaultCrumbIssuer
+                import jenkins.model.Jenkins
+
+                //Enable agent to master security
+                Jenkins.instance.getInjector().getInstance(AdminWhitelistRule.class)
+                .setMasterKillSwitch(false)
+
+                //Enable CSRF security
+                if(!Jenkins.instance.isQuietingDown()) {
+                    def j = Jenkins.instance
+                    if(j.getCrumbIssuer() == null) {
+                        j.setCrumbIssuer(new DefaultCrumbIssuer(true))
+                        j.save()
+                        println 'CSRF Protection configuration has changed.  Enabled CSRF Protection.'
+                    }
+                    else {
+                        println 'Nothing changed.  CSRF Protection already configured.'
+                    }
+                }
+                else {
+                    println "Shutdown mode enabled.  Configure CSRF protection SKIPPED."
+                }
+            /var/lib/jenkins/init.groovy.d/pluginInstallation.groovy:
+              content:
+                Fn::Sub:
+                  - |
+                    import jenkins.model.*
+                    import java.util.logging.Logger
+                    def logger = Logger.getLogger("")
+                    def installed = false
+                    def initialized = false
+                    def pluginParameter="${jenkins_plugins}"
+                    def plugins = pluginParameter.split()
+                    logger.info("" + plugins)
+                    def instance = Jenkins.getInstance()
+                    def pm = instance.getPluginManager()
+                    def uc = instance.getUpdateCenter()
+                    plugins.each {
+                      logger.info("Checking " + it)
+                      if (!pm.getPlugin(it)) {
+                        logger.info("Looking UpdateCenter for " + it)
+                        if (!initialized) {
+                          uc.updateAllSites()
+                          initialized = true
+                        }
+                        def plugin = uc.getPlugin(it)
+                        if (plugin) {
+                          logger.info("Installing " + it)
+                          def installFuture = plugin.deploy()
+                          while(!installFuture.isDone()) {
+                            logger.info("Waiting for plugin install: " + it)
+                            sleep(3000)
+                          }
+                          installed = true
+                        }
+                      }
+                    }
+                    if (installed) {
+                      logger.info("Plugins installed, initializing a restart!")
+                      instance.save()
+                      instance.restart()
+                    }
+                  - {
+                    jenkins_plugins: ec2-fleet slack
+                    }
+          commands: 
+            command2.1:
+              command: yum update -y
+            command2.2:
+              command: wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+            command2.3:
+              command: rpm --import https://jenkins-ci.org/redhat/jenkins-ci.org.key
+            command2.4:
+              command: yum install jenkins -y
+            command2.5:
+              command: service jenkins start
+            command2.7:
+              command: sed -i 's/JENKINS_JAVA_OPTIONS="-Djava.awt.headless=true"/JENKINS_JAVA_OPTIONS="-Djenkins.install.runSetupWizard=false -Djava.awt.headless=true"/g' /etc/sysconfig/jenkins
+            command2.8: 
+              command: service jenkins restart
+        jenkinsPluginConfiguration:
+          files:
+            /var/lib/jenkins/init.groovy.d/slaveFactory.groovy:
+              content: 
+                Fn::Sub: 
+                  - |
+                    import com.amazonaws.services.ec2.model.InstanceType
+                    import com.cloudbees.jenkins.plugins.awscredentials.AWSCredentialsImpl
+                    import com.cloudbees.plugins.credentials.*
+                    import com.cloudbees.plugins.credentials.domains.Domain
+                    import hudson.model.*
+                    import hudson.plugins.ec2.AmazonEC2Cloud
+                    import hudson.plugins.ec2.AMITypeData
+                    import hudson.plugins.ec2.EC2Tag
+                    import hudson.plugins.ec2.SlaveTemplate
+                    import hudson.plugins.ec2.SpotConfiguration
+                    import hudson.plugins.ec2.UnixData
+                    import jenkins.model.Jenkins
+                     
+                    // parameters
+                    def SlaveTemplateParameters = [
+                      ami:                      '${regionAMI}',
+                      associatePublicIp:        false,
+                      connectBySSHProcess:      true,
+                      connectUsingPublicIp:     false,
+                      customDeviceMapping:      '',
+                      deleteRootOnTermination:  true,
+                      description:              'Jenkins slave EC2',
+                      ebsOptimized:             false,
+                      iamInstanceProfile:       '',
+                      idleTerminationMinutes:   '5',
+                      initScript:               '',
+                      instanceCapStr:           '2',
+                      jvmopts:                  '',
+                      labelString:              'aws.jenkins.slave',
+                      launchTimeoutStr:         '',
+                      numExecutors:             '1',
+                      remoteAdmin:              'ec2-user',
+                      remoteFS:                 '',
+                      securityGroups:           '${capstoneSG}',
+                      stopOnTerminate:          false,
+                      subnetId:                 '${publicSubnet}',
+                      tags:                     new EC2Tag('Name', 'jenkins-slave'),
+                      tmpDir:                   '',
+                      type:                     '${spotInstanceType}',
+                      useDedicatedTenancy:      false,
+                      useEphemeralDevices:      true,
+                      usePrivateDnsName:        true,
+                      userData:                 '',
+                      zone:                     '${whatsMyAz}'
+                    ]
+                     
+                    def AmazonEC2CloudParameters = [
+                      cloudName:      'MyCompany',
+                      credentialsId:  'jenkins-aws-key',
+                      instanceCapStr: '2',
+                      privateKey:     '''-----BEGIN RSA PRIVATE KEY-----
+                    MIIEogIBAAKCAQEAkjaolzS/3wlfDfQkaXyuBQ5VaodY9/0tm8BUdcfGmv7MQLUg
+                    G12MNC5MLcR0Oj4NIOJZEZvH3afPmk5UZ1hZWRWupokSXDM3alNFoWzt0SKDTsig
+                    nHrqouojRbTqZG8dlmAOHom3mTzj3OFG7PyLdsAEOcrVXwnqgBn7mDriXz+dLkFY
+                    QctsJHXpm3XBNVaZ/Rmx7vAwFSg3XO0DkjRjR2mXadyh4yQX/bMqr1VEAYBBjGtZ
+                    ri9OXAnoBMduNndeRTQ6i4xA2mBW7zcg4qksHUd+0jKN5t8cVxqOSOcCCztgwaXh
+                    xEa9/SMIS+FR6NOrUQ+w0MxWsspHogWNWif9IQIDAQABAoIBAGLt9r5wY46OsbEo
+                    SubRBJHJNAQjVhBdTtm+lacnp/rBggQaSYIalr3LwaGJ9jZeO9XPMQLYC7CvVamL
+                    bFKMlc/P+t8VicW2pb0cYNWrdXH2zy+kUf/urwnSMFF+6sVP5Y4UqhkBh6d4apjO
+                    GIZLDjYoD/PmiN6IQBGzAufql7ZntgUohYYkHM/ovskZSR6fSKXn91sirlmisfhE
+                    /74kGfJF2+S/+HYtpcCgYkSYs/c0Ibzw8wEnNaCK+I0zn4Ppp53ip3hOiI3+0EVY
+                    qnNisqL5yj8wjj1QFfwkVyWCtr7p0U4A4aDza35rxDKpZW/PcZNRK5pbLQzriqo5
+                    J9DOQJ0CgYEA2HGwf+GjRMoJCcONjHKP8NJ3KoSBFj0ujJAxhIOyxJveMMS5agCH
+                    94yNReZEppV7C/1fpcPb9GL38tfAb6VdGHOlFmq7djgkCKH+F7/PvDJ+u+1G871K
+                    YtvEFlHT6IPUouEfSj+7/eRxZwNEuKkM2x4dOqPXbvKU63HJkxRFdz8CgYEArO89
+                    WARI2+o82V3ldPEZAIfri+4HD0nYW7UY4hbExdyuYTKL619Wt1nr91ubCnpR5/1s
+                    xfesBGYHlqsAuHi4tXCaU9aDyK9j+MnWUkDMvG5RXWzLDmrrfmFlohHc6r7HuVuR
+                    gtVayj8izcZpXew6Vo3ENRdvfxCzT2V7OPnG058CgYAOb465CMCN7vepWgyPyHhH
+                    NJJUGKBPbmczYs6aqvn6WPb5w7UmF8D5xrsJZXFAtwmM5CpD8QszgoJNBQzFpX7P
+                    Ca+CDj5QhTAKD1vWE6n0QF3phMrNqNtUOpoabvy2Lky5TFB88EFGjrzthO9JbaT4
+                    3EpQxeqxcKZ0CZPLJnf3mwKBgFu46IhufVZm/q8rpjBIUEJ/1Ob68LOjLyY0/2Wr
+                    PeLUEYlsDdphTtUg1I71/12nUxoAyFiX7JzIoO3A9TjijtVtS+17sZoXrKagJxSp
+                    We33dSBgO7MB8rWtYwJ7BvlbBwPBFYSXNPhgVE1gFzLBwI930cF3FKQIb5KE+L5X
+                    fKVxAoGAcvNM9HpgtR3ngP7xWkeOWVkV6NDc2GbuYptbAMM7lY2DzG2Dbq1ru6iJ
+                    n5CNoNomPrHA05Zx2e+DbmrDbJVowSlX5xJKbc3ttYsBZlqYdZmWllpG1np8snwd
+                    I2vmggm6Uubt0s433SbMwgXonolPH0N7s8VdzVf0/moMUujYcE0=
+                    -----END RSA PRIVATE KEY-----''',
+                      region: '${AWS::Region}',
+                      useInstanceProfileForCredentials: false
+                    ]
+                     
+                    def AWSCredentialsImplParameters = [
+                      id:           'jenkins-aws-key',
+                      description:  'Jenkins AWS IAM key',
+                      accessKey:    '01234567890123456789',
+                      secretKey:    '01345645657987987987987987987987987987'
+                    ]
+                     
+                    // https://github.com/jenkinsci/aws-credentials-plugin/blob/aws-credentials-1.23/src/main/java/com/cloudbees/jenkins/plugins/awscredentials/AWSCredentialsImpl.java
+                    AWSCredentialsImpl aWSCredentialsImpl = new AWSCredentialsImpl(
+                      CredentialsScope.GLOBAL,
+                      AWSCredentialsImplParameters.id,
+                      AWSCredentialsImplParameters.accessKey,
+                      AWSCredentialsImplParameters.secretKey,
+                      AWSCredentialsImplParameters.description
+                    )
+                     
+                    // https://github.com/jenkinsci/ec2-plugin/blob/ec2-1.38/src/main/java/hudson/plugins/ec2/SlaveTemplate.java
+                    SlaveTemplate slaveTemplate = new SlaveTemplate(
+                      SlaveTemplateParameters.ami,
+                      SlaveTemplateParameters.zone,
+                      null,
+                      SlaveTemplateParameters.securityGroups,
+                      SlaveTemplateParameters.remoteFS,
+                      InstanceType.fromValue(SlaveTemplateParameters.type),
+                      SlaveTemplateParameters.ebsOptimized,
+                      SlaveTemplateParameters.labelString,
+                      Node.Mode.NORMAL,
+                      SlaveTemplateParameters.description,
+                      SlaveTemplateParameters.initScript,
+                      SlaveTemplateParameters.tmpDir,
+                      SlaveTemplateParameters.userData,
+                      SlaveTemplateParameters.numExecutors,
+                      SlaveTemplateParameters.remoteAdmin,
+                      new UnixData(null, null, null),
+                      SlaveTemplateParameters.jvmopts,
+                      SlaveTemplateParameters.stopOnTerminate,
+                      SlaveTemplateParameters.subnetId,
+                      [SlaveTemplateParameters.tags],
+                      SlaveTemplateParameters.idleTerminationMinutes,
+                      SlaveTemplateParameters.usePrivateDnsName,
+                      SlaveTemplateParameters.instanceCapStr,
+                      SlaveTemplateParameters.iamInstanceProfile,
+                      SlaveTemplateParameters.deleteRootOnTermination,
+                      SlaveTemplateParameters.useEphemeralDevices,
+                      SlaveTemplateParameters.useDedicatedTenancy,
+                      SlaveTemplateParameters.launchTimeoutStr,
+                      SlaveTemplateParameters.associatePublicIp,
+                      SlaveTemplateParameters.customDeviceMapping,
+                      SlaveTemplateParameters.connectBySSHProcess,
+                      SlaveTemplateParameters.connectUsingPublicIp
+                    )
+                     
+                    // https://github.com/jenkinsci/ec2-plugin/blob/ec2-1.38/src/main/java/hudson/plugins/ec2/AmazonEC2Cloud.java
+                    AmazonEC2Cloud amazonEC2Cloud = new AmazonEC2Cloud(
+                      AmazonEC2CloudParameters.cloudName,
+                      AmazonEC2CloudParameters.useInstanceProfileForCredentials,
+                      AmazonEC2CloudParameters.credentialsId,
+                      AmazonEC2CloudParameters.region,
+                      AmazonEC2CloudParameters.privateKey,
+                      AmazonEC2CloudParameters.instanceCapStr,
+                      [slaveTemplate]
+                    )
+                     
+                    // get Jenkins instance
+                    Jenkins jenkins = Jenkins.getInstance()
+                     
+                    // get credentials domain
+                    def domain = Domain.global()
+                     
+                    // get credentials store
+                    def store = jenkins.getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0].getStore()
+                     
+                    // add credential to store
+                    store.addCredentials(domain, aWSCredentialsImpl)
+                     
+                    // add cloud configuration to Jenkins
+                    jenkins.clouds.add(amazonEC2Cloud)
+                     
+                    // save current Jenkins state to disk
+                    jenkins.save()
+                  - {
+                    whatsMyAz: !Select [0, !GetAZs ""],
+                    regionAMI: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+                    }
+            /var/lib/jenkins/init.groovy.d/slackSettings.groovy:
+              content: !Sub |
+                import jenkins.model.Jenkins
+                import com.cloudbees.plugins.credentials.domains.Domain
+                import org.jenkinsci.plugins.plaincredentials.impl.*
+                import hudson.util.Secret
+                import com.cloudbees.plugins.credentials.CredentialsScope
+
+                def jenkins = Jenkins.getInstance()
+
+                def domain = Domain.global()
+                def store = jenkins.getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0].getStore()
+
+                def slackCredentialParameters = [
+                  description:  'Slack Jenkins integration token1',
+                  id:           'slack-token',
+                  secret:       '${SlackGlobalToken}'
+                ]
+
+                def secretText = new StringCredentialsImpl(
+                  CredentialsScope.GLOBAL,
+                  slackCredentialParameters.id,
+                  slackCredentialParameters.description,
+                  Secret.fromString(slackCredentialParameters.secret)
+                )
+                  
+                store.addCredentials(domain, secretText)
+
+                def slack = jenkins.getDescriptorByType(jenkins.plugins.slack.SlackNotifier.DescriptorImpl.class)
+                // slack.setBaseUrl - only needed for slack compatible applications e.g. Mattermost
+                slack.setTeamDomain('${SlackTeamDomain}')
+                slack.setTokenCredentialId(slackCredentialParameters.id)
+                slack.setBotUser(false)
+                slack.setRoom('${SlackGlobalChannel}')
+
+                slack.save()
+                jenkins.save()
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+      InstanceType: t2.micro
+      KeyName:
+        Ref: securityKeyPair
+      SecurityGroupIds:
+        - Ref: capstoneSG
+      SubnetId:
+        Ref: publicSubnet
+      UserData: #the following script calls the cfn-init helper function to run the commands the the instance metadata using a preconfigured set of commands.
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash -xe
+            #Install the files and packages from the Metadata
+            /opt/aws/bin/cfn-init --verbose --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region} --configset cli
+            #/opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource capstoneJenkinsMaster --region ${AWS::Region}
+
+  capstoneSpotFleet:
+    DependsOn:
+      - awsFleetManager
+      - capstoneSG
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        IamFleetRole:
+          Fn::GetAtt:
+            - awsFleetManager
+            - Arn
+        AllocationStrategy: lowestPrice
+        InstanceInterruptionBehavior: stop
+        LaunchSpecifications:
+          - ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+            InstanceType: 
+              Ref: spotInstanceType
+            KeyName:
+              Ref: securityKeyPair
+            Monitoring:
+              Enabled: True
+            SecurityGroups:
+              - GroupId:
+                  Ref: capstoneSG
+            SubnetId:
+              Ref: publicSubnet
+            SpotPrice: 
+              Ref: spotBidPrice
+            WeightedCapacity: 1
+        TargetCapacity:
+          Ref: spotTargetCapacity
+    
