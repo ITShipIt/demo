@@ -325,15 +325,18 @@ Resources:
                 - |
                   import jenkins.model.*
                   import java.util.logging.Logger
+
                   def logger = Logger.getLogger("")
                   def installed = false
                   def initialized = false
                   def pluginParameter="${jenkins_plugins} ${jenkinsAdditionalPlugins}"
                   def plugins = pluginParameter.split()
                   logger.info("" + plugins)
+
                   def instance = Jenkins.getInstance()
                   def pm = instance.getPluginManager()
                   def uc = instance.getUpdateCenter()
+
                   plugins.each {
                     logger.info("Checking " + it)
                     if (!pm.getPlugin(it)) {
@@ -383,8 +386,13 @@ Resources:
               content: 
                 Fn::Sub: 
                 - |
+                  import jenkins.model.*
+                  import hudson.slaves.*
+                  import com.amazon.jenkins.ec2fleet.*
+                  import hudson.plugins.sshslaves.verifiers.*
                   import com.cloudbees.jenkins.plugins.awscredentials.AWSCredentialsImpl
                   import com.cloudbees.plugins.credentials.*
+                  import com.cloudbees.plugins.credentials.impl.*
                   import com.cloudbees.plugins.credentials.domains.Domain
 
                   def AWSCredentialsImplParameters = [
@@ -393,6 +401,65 @@ Resources:
                     accessKey:    '${jenkinsAWSKey}',
                     secretKey:    '${jenkinsSecretKey}'
                   ]
+
+                  def AWSHostCredentials = [
+                    id:           java.util.UUID.randomUUID().toString(),
+                    description:  "ssh user for aws linux boxes",
+                    username:     "ec2-user",
+                    password:     ""
+                  ]
+
+                  def AWSEC2FleetParam = [
+                    credentialsid:      AWSHostCredentials.id,
+                    region:             '${AWS::Region}',
+                    fleet:              '${fleetid}',
+                    labelString:        'ec2-fleet',
+                    fsRoot:             '',
+                    privateIpUsed:      false,
+                    alwaysReconnect:    false,
+                    idleMinutes:        5,
+                    minSize:            1,
+                    maxSize:            5,
+                    numExecutors:       1
+                  ]
+
+                  SshHostKeyVerificationStrategy hostKeyVerificationStrategy = new KnownHostsFileKeyVerificationStrategy()
+                  //TrustInitialConnectionVerificationStrategy(false /* "Require manual verification of initial connection" */)
+                  //ManuallyProvidedKeyVerificationStrategy("<your-key-here>")
+                  //ManuallyTrustedKeyVerificationStrategy(false /*requires initial manual trust*/)
+                  //NonVerifyingKeyVerificationStrategy()
+
+                  def newLauncherParamaters = [
+                    port:           22,  // port
+                    javapath:       '',  // JavaPath
+                    jvm:            '',  // JVM Options
+                    time:           5,   // conneciton timeout (seconds)
+                    maxr:           5,   // max number of retries
+                    wait:           5,   // time to wait between retries (seconds)
+                    prefix:         '',    //prefix for agent start
+                    suffix:         '',    //suffix for agent start
+                  ]
+
+                  Credentials eC2 = new UsernamePasswordCredentialsImpl(
+                    CredentialsScope.GLOBAL,
+                    AWSHostCredentials.id,
+                    AWSHostCredentials.description,
+                    AWSHostCredentials.username,
+                    AWSHostCredentials.password
+                  )
+
+                  ComputerConnector EC2Connector = new hudson.plugins.sshslaves.SSHConnector(
+                    newLauncherParamaters.port,
+                    AWSHostCredentials.id, // Credentials ID
+                    newLauncherParamaters.jvm,
+                    newLauncherParamaters.javapath,
+                    newLauncherParamaters.prefix,
+                    newLauncherParamaters.suffix,
+                    newLauncherParamaters.time, 
+                    newLauncherParamaters.maxr, 
+                    newLauncherParamaters.wait, 
+                    hostKeyVerificationStrategy
+                  )
 
                   // https://github.com/jenkinsci/aws-credentials-plugin/blob/aws-credentials-1.23/src/main/java/com/cloudbees/jenkins/plugins/awscredentials/AWSCredentialsImpl.java
                   AWSCredentialsImpl aWSCredentialsImpl = new AWSCredentialsImpl(
@@ -403,25 +470,43 @@ Resources:
                     AWSCredentialsImplParameters.description
                   )
 
+                  EC2FleetCloud amazonEC2FleetCloud = new EC2FleetCloud(
+                    AWSEC2FleetParam.credentialsid,
+                    AWSEC2FleetParam.region,
+                    AWSEC2FleetParam.fleet,
+                    AWSEC2FleetParam.labelString,
+                    AWSEC2FleetParam.fsRoot,
+                    EC2Connector,
+                    AWSEC2FleetParam.privateIpUsed,
+                    AWSEC2FleetParam.alwaysReconnect,
+                    AWSEC2FleetParam.idleMinutes,
+                    AWSEC2FleetParam.minSize,
+                    AWSEC2FleetParam.maxSize,
+                    AWSEC2FleetParam.numExecutors
+                  )
+
                   // get Jenkins instance
                   Jenkins jenkins = Jenkins.getInstance()
-                   
+
                   // get credentials domain
                   def domain = Domain.global()
-                   
+
                   // get credentials store
                   def store = jenkins.getExtensionList('com.cloudbees.plugins.credentials.SystemCredentialsProvider')[0].getStore()
-                   
+
                   // add credential to store
                   store.addCredentials(domain, aWSCredentialsImpl)
+                  store.addCredentials(domain, eC2)
+
+                  //add fleet cloud to jenkins
+                  jenkins.clouds.add(amazonEC2FleetCloud)
 
                   // save current Jenkins state to disk
                   jenkins.save()
                 - {
                   jenkinsAWSKey: !Ref jenkinsAccessKey,
                   jenkinsSecretKey: !GetAtt [jenkinsAccessKey, SecretAccessKey],
-                  whatsMyAz: !Select [0, !GetAZs ""],
-                  regionAMI: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
+                  fleetid: !Ref capstoneSpotFleet
                   }
             /var/lib/jenkins/init.groovy.d/slackSettings.groovy:
               content: !Sub |
