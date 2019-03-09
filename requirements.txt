@@ -3,4 +3,3 @@ Redis
 
 Quere ver se da certo
 
-Tomara que funcione
