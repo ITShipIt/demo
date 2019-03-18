@@ -261,6 +261,7 @@ Resources:
           cli:
           - jenkinsCliInstall
           - jenkinsPluginConfiguration
+          - jenkinsCleanup
         jenkinsCliInstall: #This will install jenkins through the cli using an rpm
           packages:
             yum:
@@ -545,6 +546,11 @@ Resources:
 
                 slack.save()
                 jenkins.save()
+        jenkinsCleanup:
+          commands:
+            cleanScripts:
+              command: rm *.groovy
+              cwd: /var/lib/jenkins/init.groovy.d
     Properties:
       ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
       InstanceType: t2.micro
