@@ -61,6 +61,7 @@ Parameters:
   
   SlackGlobalChannel:
     Type: String
+    Default: '#General'
     Description: Default channel to send slack messages to
 
   SlackGlobalToken:
@@ -71,6 +72,13 @@ Parameters:
   securityKeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Encryption keypair to use with created EC2 instances
+
+  jenkinsAdditionalPlugins:
+    Type: String
+
+  privateKey:
+    Type: String
+    NoEcho: True
 
   spotInstanceType:
     Type: String
@@ -132,7 +140,8 @@ Resources:
             Action:
             - ec2:*
             Resource: '*'
-
+        #amazonec2spotfleettagging role
+        #amazonec2readonly access
   jenkinsAccessKey:
     DependsOn:
     - jenkinsAWSUser
@@ -258,6 +267,7 @@ Resources:
           cli:
           - jenkinsCliInstall
           - jenkinsPluginConfiguration
+          - jenkinsCleanup
         jenkinsCliInstall: #This will install jenkins through the cli using an rpm
           packages:
             yum:
@@ -326,7 +336,7 @@ Resources:
                   def logger = Logger.getLogger("")
                   def installed = false
                   def initialized = false
-                  def pluginParameter="${jenkins_plugins}"
+                  def pluginParameter="${jenkins_plugins} ${jenkinsAdditionalPlugins}"
                   def plugins = pluginParameter.split()
                   logger.info("" + plugins)
 
@@ -360,7 +370,7 @@ Resources:
                     instance.restart()
                   }
                 - {
-                  jenkins_plugins: ec2-fleet slack
+                  jenkins_plugins: ace-editor ant antisamy-markup-formatter apache-httpcomponents-client-4-api authentication-tokens bouncycastle-api branch-api build-timeout cloudbees-folder command-launcher credentials credentials-binding display-url-api docker-commons docker-workflow durable-task ec2-fleet email-ext git git-client github github-api github-branch-source git-server gradle handlebars jackson2-api jdk-tool jquery-detached jsch junit ldap lockable-resources mailermapdb-api matrix-auth matrix-project momentjs pam-auth pipeline-build-step pipeline-github-lib pipeline-graph-analysis pipeline-input-step pipeline-milestone-step pipeline-model-api pipeline-model-declarative-agent pipeline-model-definition pipeline-model-extensions pipeline-rest-api pipeline-stage-step pipeline-stage-tags-metadata pipeline-stage-view plain-credentials resource-disposer scm-api script-security slack ssh-credentials ssh-slaves structs subversion timestamper token-macro workflow-aggregator workflow-api workflow-basic-steps workflow-cps workflow-cps-global-lib workflow-durable-task-step workflow-job workflow-multibranch workflow-scm-step workflow-step-api workflow-support ws-cleanup
                   }
           commands: 
             command2.1:
@@ -392,7 +402,7 @@ Resources:
                   import com.cloudbees.plugins.credentials.*
                   import com.cloudbees.plugins.credentials.impl.*
                   import com.cloudbees.plugins.credentials.domains.Domain
-
+                  import com.cloudbees.jenkins.plugins.sshcredentials.impl.*
                   def AWSCredentialsImplParameters = [
                     id:           'jenkins-aws-key',
                     description:  'Jenkins AWS IAM key',
@@ -404,7 +414,8 @@ Resources:
                     id:           java.util.UUID.randomUUID().toString(),
                     description:  "ssh user for aws linux boxes",
                     username:     "ec2-user",
-                    password:     ""
+                    privatekey:   '${privateKey}',
+                    passphrase:   ''
                   ]
 
                   def AWSEC2FleetParam = [
@@ -438,12 +449,13 @@ Resources:
                     suffix:         '',    //suffix for agent start
                   ]
 
-                  Credentials eC2 = new UsernamePasswordCredentialsImpl(
+                  Credentials eC2 = new BasicSSHUserPrivateKey(
                     CredentialsScope.GLOBAL,
                     AWSHostCredentials.id,
-                    AWSHostCredentials.description,
                     AWSHostCredentials.username,
-                    AWSHostCredentials.password
+                    AWSHostCredentials.privatekey,
+                    AWSHostCredentials.passphrase,
+                    AWSHostCredentials.description
                   )
 
                   ComputerConnector EC2Connector = new hudson.plugins.sshslaves.SSHConnector(
@@ -543,6 +555,11 @@ Resources:
 
                 slack.save()
                 jenkins.save()
+        jenkinsCleanup:
+          commands:
+            cleanScripts:
+              command: rm *.groovy
+              cwd: /var/lib/jenkins/init.groovy.d
     Properties:
       ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMI]
       InstanceType: t2.micro
@@ -553,7 +570,7 @@ Resources:
       SubnetId:
         Ref: publicSubnet
       UserData: #the following script calls the cfn-init helper function to run the commands the the instance metadata using a preconfigured set of commands.
-        "Fn::Base64":
+        Fn::Base64:
           !Sub |
             #!/bin/bash -xe
             #Install the files and packages from the Metadata
@@ -588,6 +605,14 @@ Resources:
             Ref: publicSubnet
           SpotPrice: 
             Ref: spotBidPrice
+          UserData: 
+            Fn::Base64: |
+              #!/bin/bash -xe
+              yum -y --security update
+              yum -y update aws-cli
+              yum -y groupinstall "Development Tools"
+              yum -y remove java-1.7.0
+              yum -y install java-1.8*
           WeightedCapacity: 1
         TargetCapacity:
           Ref: spotTargetCapacity
