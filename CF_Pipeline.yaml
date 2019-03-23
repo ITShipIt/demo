@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-Description: Cameron's Testing Stack - SpotFleet
+Description: Capstone Testing Stack - SpotFleet
 
 Mappings:
 
@@ -71,8 +71,12 @@ Parameters:
 
   securityKeyPair:
     Type: AWS::EC2::KeyPair::KeyName
-    Description: Encryption keypair to use with created EC2 instances
+    Description: Encryption keypair to use with created EC2 Jenkins instance
 
+  spotFleetKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Key pair to be used with the jenkins slave spot fleet. It is reccomended that this is a unique keypair.
+  
   jenkinsAdditionalPlugins:
     Type: String
 
@@ -595,7 +599,7 @@ Resources:
           InstanceType: 
             Ref: spotInstanceType
           KeyName:
-            Ref: securityKeyPair
+            Ref: spotFleetKeyPair
           Monitoring:
             Enabled: True
           SecurityGroups:
